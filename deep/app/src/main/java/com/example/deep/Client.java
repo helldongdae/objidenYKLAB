@@ -84,6 +84,20 @@ public class Client{
         }
     }
 
+    public void send(int n){
+        try {
+            byte[] ret = new byte[4];
+            ret[3] = (byte) (n & 0xFF);
+            ret[2] = (byte) ((n >> 8) & 0xFF);
+            ret[1] = (byte) ((n >> 16) & 0xFF);
+            ret[0] = (byte) ((n >> 24) & 0xFF);
+            socketOutput.write(ret);
+        } catch (IOException e) {
+            if(listener!=null)
+                listener.onDisconnect(socket, e.getMessage());
+        }
+    }
+
     public void disconnect(){
         try{
             socket.close();

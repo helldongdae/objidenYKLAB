@@ -7,24 +7,17 @@ package com.example.deep;
 import android.graphics.Matrix;
 import android.graphics.drawable.BitmapDrawable;
 import android.view.View;
-
+import android.app.ProgressDialog;
+import android.os.AsyncTask;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
-import org.opencv.android.JavaCameraView;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.core.Scalar;
-import org.opencv.features2d.DescriptorExtractor;
-import org.opencv.features2d.DescriptorMatcher;
-import org.opencv.features2d.FeatureDetector;
-import org.opencv.features2d.KeyPoint;
-import org.opencv.highgui.Highgui;
-import org.opencv.imgproc.Imgproc;
 import org.opencv.core.Core;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
@@ -46,28 +39,15 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.Toast;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.InputStream;
-import java.lang.reflect.Member;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Vector;
-import java.math.*;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.UnknownHostException;
-import java.lang.Object;
-
-import org.json.JSONException;
-import org.json.JSONObject;
 
 public class MainActivity extends Activity implements CvCameraViewListener2  {
+    static {
+        if (!OpenCVLoader.initDebug()){
+
+        }
+    }
 
     private static final String    TAG = "Yklab";
 
@@ -116,6 +96,7 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
         setContentView(R.layout.activity_main);
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.activity_surface_view);
         mOpenCvCameraView.setCvCameraViewListener(this);
+        mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
     }
 
 
@@ -131,7 +112,8 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
     public void onResume()
     {
         super.onResume();
-        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_3, this, mLoaderCallback);
+        mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        //OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_10, this, mLoaderCallback);
     }
 
     public void onDestroy() {
@@ -215,6 +197,13 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
         ab.setPositiveButton("yes", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialogInterface, int i) {
+                final ProgressDialog asyncDialog = new ProgressDialog(
+                        MainActivity.this);
+                asyncDialog.setProgressStyle(ProgressDialog.STYLE_SPINNER);
+                asyncDialog.setMessage("Classifying...");
+
+                // show dialog
+                asyncDialog.show();
                 Matrix matrix = new Matrix();
                 matrix.postRotate(90);
                 Bitmap scaledBitmap = Bitmap.createScaledBitmap(bmp,bmp.getWidth(),bmp.getHeight(),true);
@@ -222,12 +211,13 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
                 ByteArrayOutputStream bmpStream = new ByteArrayOutputStream();
                 bmp.compress(Bitmap.CompressFormat.JPEG, 100, bmpStream);
                 barray = bmpStream.toByteArray();
-                client = new Client("192.168.0.18", 3000);
+                client = new Client("203.252.121.225", 3000);
                 client.setClientCallback(new Client.ClientCallback () {
                     @Override
                     public void onMessage(String message) {
                         if(!message.equals(""))
                             msg = message;
+                        asyncDialog.dismiss();
                         client.disconnect();
                         Intent intentSubActivity =
                                 new Intent(MainActivity.this, chooseActivity.class);
@@ -238,8 +228,8 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
 
                     @Override
                     public void onConnect(Socket socket) {
+                        client.send(barray.length);
                         client.send(barray);
-                        client.send("");
                         //client.disconnect();
                     }
 
@@ -249,6 +239,7 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
 
                     @Override
                     public void onConnectError(Socket socket, String message) {
+                        asyncDialog.dismiss();
                         MainActivity.this.runOnUiThread(new Runnable() {
                             public void run() {
                                 Toast.makeText(MainActivity.this, "Can not connect to server", Toast.LENGTH_SHORT).show();
