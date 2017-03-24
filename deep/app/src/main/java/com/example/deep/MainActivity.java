@@ -4,8 +4,11 @@ package com.example.deep;
 // ION library
 // Node JS & Express
 
+import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Matrix;
 import android.graphics.drawable.BitmapDrawable;
+import android.util.DisplayMetrics;
 import android.view.View;
 import android.app.ProgressDialog;
 import android.os.AsyncTask;
@@ -22,6 +25,8 @@ import org.opencv.core.Core;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.android.Utils;
+import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -34,6 +39,11 @@ import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
+import android.view.animation.AnimationSet;
+import android.view.animation.AnimationUtils;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -57,6 +67,8 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
 
     private Socket socket;
 
+    Animation anim;
+
     private AlertDialog confirmDialog;
     Mat mRgba, cpyMat, showMat;
     boolean takePic = false, dragEvent = false;
@@ -64,7 +76,10 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
     Bitmap bmp;
     byte barray [];
     String msg;
+    boolean cameraClicked = false;
 
+    ImageView v;
+    AnimationSet set;
 
     private BaseLoaderCallback  mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -84,6 +99,13 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
         }
     };
 
+    public static Bitmap RotateBitmap(Bitmap source, float angle)
+    {
+        Matrix matrix = new Matrix();
+        matrix.postRotate(angle);
+        return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
+    }
+
     public MainActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
@@ -92,6 +114,9 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Toast.makeText(getApplicationContext(), "카메라를 고정하려면 가운데의 버튼을 눌러주세요!", Toast.LENGTH_LONG).show();
+        set = new AnimationSet(true);
+        anim = AnimationUtils.loadAnimation(getApplicationContext(), R.anim.myanimation);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.activity_surface_view);
@@ -130,6 +155,7 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
 
     }
 
+    @Override
     public boolean onTouchEvent(MotionEvent event){
         super.onTouchEvent(event);
         if(dragEvent){
@@ -162,12 +188,29 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
     // Camera Function
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
-        ImageButton cameraButton = (ImageButton) findViewById(R.id.cameraButton);
+        int orient = getResources().getConfiguration().orientation;
+        if(orient == Configuration.ORIENTATION_PORTRAIT) {
+            mRgba = rotate90(mRgba);
+        }
+        final ImageButton cameraButton = (ImageButton) findViewById(R.id.cameraButton);
         cameraButton.setOnClickListener(
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View view) {
-                        p1_x = 0; p1_y = 0; p2_x = 0; p2_y = 0;
+                        if(cameraClicked) {
+                            cameraClicked = !cameraClicked;
+                            cameraButton.setImageResource(R.drawable.camera);
+                        }
+                        else {
+                            Toast.makeText(getApplicationContext(), "손가락으로 물건의 영역을 드래그 해주세요!", Toast.LENGTH_SHORT).show();
+                            cameraClicked = !cameraClicked;
+                            cameraButton.setImageResource(R.drawable.camera2);
+                        }
+                        p1_x = 0;
+                        p1_y = 0;
+                        p2_x = 0;
+                        p2_y = 0;
+
                         cpyMat = mRgba.clone();
                         takePic = !takePic;
                         dragEvent = !dragEvent;
@@ -175,21 +218,34 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
                 }
         );
         System.gc();
-        if(takePic) {
+        if (takePic) {
             showMat = cpyMat.clone();
-            if(Math.abs(p1_x-p2_x) * Math.abs(p1_y-p2_y) > 10)
+            int width = this.getResources().getDisplayMetrics().widthPixels;
+            int height = this.getResources().getDisplayMetrics().heightPixels;
+            int orientation = getResources().getConfiguration().orientation;
+            Core.rectangle(showMat, new Point(0, 0), new Point(width, height), new Scalar(255, 0, 0), 5);
+            if (Math.abs(p1_x - p2_x) * Math.abs(p1_y - p2_y) > 10) {
                 Core.rectangle(showMat, new Point(p1_x, p1_y), new Point(p2_x, p2_y), new Scalar(255, 0, 0), 3);
+            }
             return showMat;
-        }
-        else
+        } else {
             return mRgba;
+        }
+    }
+
+    private Mat rotate90(Mat src){
+        Mat tmp = new Mat();
+        Core.transpose(src, tmp);
+        Core.flip(tmp, tmp, 1);
+        return tmp;
     }
 
     private AlertDialog createConfirmDialog(){
         AlertDialog.Builder ab = new AlertDialog.Builder(this);
-        ab.setTitle("Is this the image?");
+        ab.setTitle("이 이미지가 맞나요?");
 
         ImageView view = new ImageView(this);
+        int orientation = getResources().getConfiguration().orientation;
         view.setImageBitmap(bmp);
         ab.setView(view);
 
@@ -204,14 +260,10 @@ public class MainActivity extends Activity implements CvCameraViewListener2  {
 
                 // show dialog
                 asyncDialog.show();
-                Matrix matrix = new Matrix();
-                matrix.postRotate(90);
-                Bitmap scaledBitmap = Bitmap.createScaledBitmap(bmp,bmp.getWidth(),bmp.getHeight(),true);
-                bmp = Bitmap.createBitmap(scaledBitmap , 0, 0, scaledBitmap .getWidth(), scaledBitmap .getHeight(), matrix, true);
                 ByteArrayOutputStream bmpStream = new ByteArrayOutputStream();
                 bmp.compress(Bitmap.CompressFormat.JPEG, 100, bmpStream);
                 barray = bmpStream.toByteArray();
-                client = new Client("203.252.121.225", 3000);
+                client = new Client("203.252.121.224", 3000);
                 client.setClientCallback(new Client.ClientCallback () {
                     @Override
                     public void onMessage(String message) {

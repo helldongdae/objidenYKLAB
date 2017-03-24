@@ -1,8 +1,11 @@
 package org.opencv.android;
 
+import java.lang.reflect.Method;
 import java.util.List;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
@@ -10,7 +13,10 @@ import android.hardware.Camera.PreviewCallback;
 import android.os.Build;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.Display;
+import android.view.Surface;
 import android.view.ViewGroup.LayoutParams;
+import android.view.WindowManager;
 
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
@@ -137,14 +143,22 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
                 Camera.Parameters params = mCamera.getParameters();
                 Log.d(TAG, "getSupportedPreviewSizes()");
                 List<android.hardware.Camera.Size> sizes = params.getSupportedPreviewSizes();
-
+                float q = Build.VERSION.SDK_INT;
                 if (sizes != null) {
                     /* Select the size that fits surface considering maximum size allowed */
                     Size frameSize = calculateCameraFrameSize(sizes, new JavaCameraSizeAccessor(), width, height);
-
                     params.setPreviewFormat(ImageFormat.NV21);
+
                     Log.d(TAG, "Set preview size to " + Integer.valueOf((int)frameSize.width) + "x" + Integer.valueOf((int)frameSize.height));
-                    params.setPreviewSize((int)frameSize.width, (int)frameSize.height);
+                    int orientation = getResources().getConfiguration().orientation;
+
+                    if(orientation == Configuration.ORIENTATION_PORTRAIT){
+                        params.setPreviewSize((int) frameSize.width, (int) frameSize.height);
+                        //params.setPreviewSize((int) frameSize.height, (int) frameSize.width);
+                        mCamera.setDisplayOrientation(90);
+                    }
+                    else
+                        params.setPreviewSize((int) frameSize.width, (int) frameSize.height);
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH && !android.os.Build.MODEL.equals("GT-I9100"))
                         params.setRecordingHint(true);
@@ -160,6 +174,7 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
 
                     mFrameWidth = params.getPreviewSize().width;
                     mFrameHeight = params.getPreviewSize().height;
+
 
                     if ((getLayoutParams().width == LayoutParams.MATCH_PARENT) && (getLayoutParams().height == LayoutParams.MATCH_PARENT))
                         mScale = Math.min(((float)height)/mFrameHeight, ((float)width)/mFrameWidth);
@@ -192,9 +207,11 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
                         mCamera.setPreviewTexture(mSurfaceTexture);
                     } else
                        mCamera.setPreviewDisplay(null);
-
                     /* Finally we are ready to start the preview */
                     Log.d(TAG, "startPreview");
+
+
+
                     mCamera.startPreview();
                 }
                 else
@@ -273,7 +290,7 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
     }
 
     public void onPreviewFrame(byte[] frame, Camera arg1) {
-        Log.d(TAG, "Preview Frame received. Frame size: " + frame.length);
+        //Log.d(TAG, "Preview Frame received. Frame size: " + frame.length);
         synchronized (this) {
             mFrameChain[1 - mChainIdx].put(0, 0, frame);
             this.notify();
@@ -294,8 +311,15 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
 
         public JavaCameraFrame(Mat Yuv420sp, int width, int height) {
             super();
-            mWidth = width;
-            mHeight = height;
+            int orientation = getResources().getConfiguration().orientation;
+            if(orientation == Configuration.ORIENTATION_PORTRAIT) {
+                mWidth = height;
+                mHeight = width;
+            }
+            else {
+                mWidth = width;
+                mHeight = height;
+            }
             mYuvFrameData = Yuv420sp;
             mRgba = new Mat();
         }
@@ -324,12 +348,27 @@ public class JavaCameraView extends CameraBridgeViewBase implements PreviewCallb
                 }
 
                 if (!mStopThread) {
-                    if (!mFrameChain[mChainIdx].empty())
+                    if (!mFrameChain[mChainIdx].empty()) {
+
                         deliverAndDrawFrame(mCameraFrame[mChainIdx]);
+                    }
                     mChainIdx = 1 - mChainIdx;
                 }
             } while (!mStopThread);
             Log.d(TAG, "Finish processing thread");
+        }
+    }
+
+    protected void setDisplayOrientation(Camera camera, int angle){
+        Method downPolymorphic;
+        try
+        {
+            downPolymorphic = camera.getClass().getMethod("setDisplayOrientation", new Class[] { int.class });
+            if (downPolymorphic != null)
+                downPolymorphic.invoke(camera, new Object[] { angle });
+        }
+        catch (Exception e1)
+        {
         }
     }
 }
